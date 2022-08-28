@@ -34,11 +34,12 @@ __kernel void sp2dense(const unsigned int bs,
                        __global const int *nbrows, // nbrows for submatrix
                        __global const int *nbcols, // nbcols for submatrix
                        __global const int *srp,    // submatrix rowPointers
-                       __global const int *srpi,   // pointers for submatrix rowPointers
+                       __global const int *srpp,   // pointers for submatrix rowPointers
                        __global const int *sci,    // submatrix colIndices
                        __global const int *scip,   // pointers for submatrix colIndices
                        __global const int *svl,    // submatrix valsLocations
                        __global const int *svlp,   // pointers to submatrix valsLocations
+                       __global const int *sqrp,   // pointers to the dense submatrices
                        __global const double *vals,
                        __global double *QR)
 {
@@ -120,7 +121,7 @@ __kernel void sub_scale_col(const unsigned int bs,
     const unsigned int idx_t = get_local_id(0);
     const unsigned int lane = idx_t % warpsize;
 
-    for(unsigned int r = lane + colr + row_offset; r < nbrows * bs; r += warpsize){
+    for(unsigned int r = lane + colr + row_offset; r < nbrows[tsm] * bs; r += warpsize){
         QR[sqrp[tsm] + r * nbcols[tsm] * bs + coll] -= factor * QR[sqrp[tsm] + r * nbcols[tsm] * bs + colr];
     }
 }
@@ -139,7 +140,7 @@ __kernel void scale_col(const unsigned int bs,
     const unsigned int idx_t = get_local_id(0);
     const unsigned int lane = idx_t % warpsize;
 
-    for(unsigned int r = lane + col + row_offset; r < nbrows * bs; r += warpsize){
+    for(unsigned int r = lane + col + row_offset; r < nbrows[tsm] * bs; r += warpsize){
         QR[sqrp[tsm] + r * nbcols[tsm] * bs + col] /= factor;
     }
 }
@@ -245,7 +246,7 @@ __kernel void block_coldotp_transp(const unsigned int bs,
                         }
                     }
                     else{
-                        temp += QR[dense_block_ind(sqrp[tsm], nbcols[trm], bs, br, tile, k, i)] * \
+                        temp += QR[dense_block_ind(sqrp[tsm], nbcols[tsm], bs, br, tile, k, i)] * \
                             QR[dense_block_ind(sqrp[tsm], nbcols[tsm], bs, br, bc + _bc, k, j)];
                     }
                 }
@@ -347,9 +348,9 @@ __kernel void block_col_mult_sub(const unsigned int bs,
     const unsigned int i = (lane / bs) % bs;
     const unsigned int j = lane % bs;
 
-    for(unsigned int _bc = 0; _bc < num_cols_per_warp && bc + _bc < nbcols; _bc++){
+    for(unsigned int _bc = 0; _bc < num_cols_per_warp && bc + _bc < nbcols[tsm]; _bc++){
         if(lane < num_active_threads){
-            for(unsigned int br = tile + lane / bs / bs; br < nbrows; br += num_rows_per_warp){
+            for(unsigned int br = tile + lane / bs / bs; br < nbrows[tsm]; br += num_rows_per_warp){
                 for(unsigned int k = 0; k < bs; k++){
                     if(br == tile){
                         if(k == 0){
@@ -378,7 +379,7 @@ __kernel void block_col_mult_sub_qx(const unsigned int bs,
                                     __global const int *sqrp,
                                     __global const int *rhsp,
                                     __global const double *QR,
-                                    __global const double *qx,
+                                    __global double *qx,
                                     __local double *W)
 {
     const unsigned int warpsize = 32;
@@ -390,7 +391,7 @@ __kernel void block_col_mult_sub_qx(const unsigned int bs,
     const unsigned int j = lane % bs;
 
     if(lane < num_active_threads){
-        for(unsigned int br = tile + lane / bs / bs; br < nbrows; br += num_rows_per_warp){
+        for(unsigned int br = tile + lane / bs / bs; br < nbrows[tsm]; br += num_rows_per_warp){
             for(unsigned int k = 0; k < bs; k++){
                 if(br == tile){
                     if(k == 0){
@@ -421,7 +422,7 @@ __kernel void update_tr(const unsigned int bs,
     const unsigned int warpsize = 32;
     const unsigned int num_cols_per_warp = warpsize / bs / bs;
 
-    for(unsigned int bc = tile + 1; bc < nbcols; bc += num_cols_per_warp){
+    for(unsigned int bc = tile + 1; bc < nbcols[tsm]; bc += num_cols_per_warp){
         block_coldotp_transp(bs, tsm, bc, tile, nbrows, nbcols, sqrp, QR, W);
         block_col_trsolve(bs, T, W);
         block_col_mult_sub(bs, tsm, bc, tile, nbrows, nbcols, sqrp, QR, W);
@@ -436,7 +437,8 @@ __kernel void update_qx(const unsigned int bs,
                         __global const int *sqrp,
                         __global const int *rhsp,
                         __global const double *QR,
-                        __global const double *qx,
+                        __global double *qx,
+                        __local const double *T,
                         __local double *W)
 {
     block_coldotp_transp_qx(bs, tsm, tile, nbrows, nbcols, sqrp, rhsp, QR, qx, W);
@@ -445,6 +447,7 @@ __kernel void update_qx(const unsigned int bs,
 }
 
 __kernel void qr_decomposition(const unsigned int bs,
+                               const unsigned int Nb,
                                const unsigned int tile,
                                __global const int *nbrows, // nbrows for submatrix
                                __global const int *nbcols, // nbcols for submatrix
@@ -454,6 +457,7 @@ __kernel void qr_decomposition(const unsigned int bs,
                                __global const int *scip,   // pointers to submatrix colIndices
                                __global const int *svl,    // submatrix valsLocations
                                __global const int *svlp,   // pointers to submatrix valsLocations
+                               __global const int *sqrp,   // pointers to the dense submatrices
                                __global const int *rhsp,   // pointers to LSQ systems' right-hand-sides
                                __global const int *ibid,   // identity block index for target LSQ system
                                __global const double *vals,
@@ -474,13 +478,13 @@ __kernel void qr_decomposition(const unsigned int bs,
     
     while(tsm < Nb){
         if(tile == 0){
-            sp2dense(bs, tsm, nbrows, nbcols, srp, srpp, sci, scip, svl, svlp, vals, QR);
+            sp2dense(bs, tsm, nbrows, nbcols, srp, srpp, sci, scip, svl, svlp, sqrp, vals, QR);
             set_qx0(bs, tsm, rhsp, ibid, qx);
         }
         else if(tile < nbcols[tsm]){
             tile_house(bs, tile, tsm, nbrows, nbcols, sqrp, QR, aux, T);
             update_tr(bs, tsm, tile, nbrows, nbcols, sqrp, QR, T, aux);
-            update_qx(bs, tsm, tile, nbrows, nbcols, sqrp, rhsp, QR, qx, aux);
+            update_qx(bs, tsm, tile, nbrows, nbcols, sqrp, rhsp, QR, qx, T, aux);
         }
         
         tsm += num_warps_in_grid;

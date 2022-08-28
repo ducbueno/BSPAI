@@ -56,14 +56,17 @@ private:
     void setIJSets(int col);
     void setSMVecs(int col);
     void gatherSMIndices();
-    void buildSubmatrices();
-    void writeDataToGPU();
 
 public:
     BSPAI(const std::vector<int> &rowPointers_,
           const std::vector<int> &colIndices_,
           const std::vector<double> &nnzValues_,
           const int fillIn_);
+    
+    void setOpenCL(std::shared_ptr<cl::Context>& context_, std::shared_ptr<cl::CommandQueue>& queue_);
+    void buildSubmatrices();
+    void writeDataToGPU();
+    void QRDecomposititon();
 };
 
 #endif

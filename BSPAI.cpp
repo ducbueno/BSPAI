@@ -1,8 +1,10 @@
 #include <CL/cl.h>
 #include <numeric>
 #include <algorithm>
+#include <iostream>
 
 #include "BSPAI.hpp"
+#include "OpenclKernels.hpp"
 
 template <unsigned int block_size>
 BSPAI<block_size>::BSPAI(const std::vector<int> &rowPointers_,
@@ -15,7 +17,7 @@ BSPAI<block_size>::BSPAI(const std::vector<int> &rowPointers_,
     fillIn(fillIn_)
 {
     bs = block_size;
-    Nb = colIndices.size() - 1;
+    Nb = rowPointers.size() - 1;
 
     identityBlockIndex.reserve(Nb);
     nbrows.reserve(Nb);
@@ -33,6 +35,13 @@ BSPAI<block_size>::BSPAI(const std::vector<int> &rowPointers_,
     sqrPointers[0] = 0;
     rhsPointers[0] = 0;
     spaiColPointers[0] = 0;
+}
+
+template <unsigned int block_size>
+void BSPAI<block_size>::setOpenCL(std::shared_ptr<cl::Context>& context_, std::shared_ptr<cl::CommandQueue>& queue_)
+{
+    context = context_;
+    queue = queue_;
 }
 
 template <unsigned int block_size>
@@ -165,3 +174,18 @@ void BSPAI<block_size>::writeDataToGPU()
     err |= queue->enqueueFillBuffer(d_spaiNnzValues, 0, 0, spaiRowIndices.size() * bs * bs * sizeof(double), nullptr, &events[3]);
     cl::WaitForEvents(events);
 }
+
+template <unsigned int block_size>
+void BSPAI<block_size>::QRDecomposititon()
+{
+    unsigned int bs = block_size;
+    int max_nbcols = *std::max_element(nbcols.begin(), nbcols.end());
+
+    for(int tile = 0; tile < max_nbcols; tile++){
+        OpenclKernels::qr_decomposition(bs, Nb, tile, d_nbrows, d_nbcols, d_submatrixRowPointers, d_srpPointers,
+                                        d_submatrixColIndices, d_sciPointers, d_submatrixValsLocations, d_svlPointers,
+                                        d_sqrPointers, d_rhsPointers, d_identityBlockIndex, d_nnzValues, d_submatrixQR, d_rhs);
+    }
+}
+
+template class BSPAI<3>;
