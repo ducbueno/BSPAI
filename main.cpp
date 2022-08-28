@@ -51,6 +51,7 @@ int main(int argc, char** argv){
     BSPAI<3> spai(rowPointers, colIndices, nnzValues, 1);
     spai.setOpenCL(context, queue);
     spai.buildSubmatrices();
+    spai.writeDataToGPU();
 
     return 0;
 }

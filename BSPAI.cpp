@@ -19,15 +19,15 @@ BSPAI<block_size>::BSPAI(const std::vector<int> &rowPointers_,
     bs = block_size;
     Nb = rowPointers.size() - 1;
 
-    identityBlockIndex.reserve(Nb);
-    nbrows.reserve(Nb);
-    nbcols.reserve(Nb);
-    srpPointers.reserve(Nb + 1);
-    sciPointers.reserve(Nb + 1);
-    svlPointers.reserve(Nb + 1);
-    sqrPointers.reserve(Nb + 1);
-    rhsPointers.reserve(Nb + 1);
-    spaiColPointers.reserve(Nb + 1);
+    identityBlockIndex.resize(Nb);
+    nbrows.resize(Nb);
+    nbcols.resize(Nb);
+    srpPointers.resize(Nb + 1);
+    sciPointers.resize(Nb + 1);
+    svlPointers.resize(Nb + 1);
+    sqrPointers.resize(Nb + 1);
+    rhsPointers.resize(Nb + 1);
+    spaiColPointers.resize(Nb + 1);
 
     srpPointers[0] = 0;
     sciPointers[0] = 0;
@@ -71,7 +71,7 @@ void BSPAI<block_size>::setIJSets(int col)
     nbcols[col] = jset.size();
 
     spaiRowIndices.insert(spaiRowIndices.end(), jset.begin(), jset.end());
-    spaiColPointers[col + 1] = spaiColPointers[col] + spaiRowIndices.size();
+    spaiColPointers[col + 1] = spaiRowIndices.size();
 }
 
 template <unsigned int block_size>
@@ -125,6 +125,9 @@ void BSPAI<block_size>::buildSubmatrices()
         svlPointers[col + 1] = submatrixValsLocations.size();
         sqrPointers[col + 1] = sqrPointers[col] + nbrows[col] * nbcols[col] * bs * bs;
         rhsPointers[col + 1] = rhsPointers[col] + nbrows[col] * bs * bs;
+            
+        spaiColPointers[col + 1] = spaiColPointers[col] + jset.size();
+        spaiRowIndices.insert(spaiRowIndices.end(), jset.begin(), jset.end());
     }
 }
 
