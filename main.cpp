@@ -38,8 +38,6 @@ int main(int argc, char** argv){
     std::vector<int> rowPointers, colIndices;
     std::vector<double> nnzValues;
 
-    std::cout << "Starting program..." << std::endl;
-
     std::shared_ptr<cl::Context> context;
     std::shared_ptr<cl::CommandQueue> queue;
     initOpenCL(context, queue);
@@ -52,6 +50,8 @@ int main(int argc, char** argv){
     spai.setOpenCL(context, queue);
     spai.buildSubmatrices();
     spai.writeDataToGPU();
+    spai.QRDecomposititon();
+    spai.QRSolve();
 
     return 0;
 }

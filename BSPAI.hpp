@@ -67,6 +67,7 @@ public:
     void buildSubmatrices();
     void writeDataToGPU();
     void QRDecomposititon();
+    void QRSolve();
 };
 
 #endif

@@ -191,4 +191,12 @@ void BSPAI<block_size>::QRDecomposititon()
     }
 }
 
+template <unsigned int block_size>
+void BSPAI<block_size>::QRSolve()
+{
+    unsigned int bs = block_size;
+
+    OpenclKernels::solve(bs, Nb, d_nbcols, d_sqrPointers, d_rhsPointers, d_spaiColPointers, d_spaiNnzValues, d_submatrixQR, d_rhs);
+}
+
 template class BSPAI<3>;
